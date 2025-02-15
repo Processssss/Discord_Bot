@@ -38,7 +38,6 @@ static void commands_ban_handle(const dpp::slashcommand_t& event)
 
             dpp::guild_member member = std::get<dpp::guild_member>(member_callback.value);
 
-            // Récupération des rôles du serveur de manière asynchrone
             event.from->creator->roles_get(event.command.guild_id, 
             [event, user_id, member](const dpp::confirmation_callback_t& roles_callback) {
                 if (roles_callback.is_error()) {
@@ -48,7 +47,6 @@ static void commands_ban_handle(const dpp::slashcommand_t& event)
 
                 auto roles = std::get<std::unordered_map<dpp::snowflake, dpp::role>>(roles_callback.value);
 
-                // Vérification des permissions
                 bool has_permission = false;
                 for (const auto& role_id : member.get_roles()) {
                     if (roles.find(role_id) != roles.end() && roles[role_id].permissions.has(dpp::p_ban_members)) {
@@ -56,13 +54,10 @@ static void commands_ban_handle(const dpp::slashcommand_t& event)
                         break;
                     }
                 }
-
                 if (!has_permission) {
                     event.reply("⛔ Tu n'as pas la permission de bannir des membres.");
                     return;
                 }
-
-                // Bannissement de l'utilisateur
                 event.from->creator->guild_ban_add(event.command.guild_id, user_id, 0, 
                 [event, user_id](const dpp::confirmation_callback_t& ban_callback) {
                     if (ban_callback.is_error()) {
@@ -218,14 +213,13 @@ static void commands_ban_message(const dpp::message_create_t& event)
 
 static void commands_mute_message(const dpp::message_create_t& event)
 {
-    if (event.msg.content.rfind("!mute", 0) == 0) {
     std::istringstream iss(event.msg.content);
     std::vector<std::string> args;
     std::string word;
+
     while (iss >> word) {
         args.push_back(word);
     }
-
     if (args.size() < 2 || event.msg.mentions.empty()) {
         event.reply("❌ Usage: `!mute @membre [durée] [raison]`");
         return;
@@ -244,50 +238,44 @@ static void commands_mute_message(const dpp::message_create_t& event)
 
         auto roles = std::get<std::unordered_map<dpp::snowflake, dpp::role>>(callback.value);
         auto member_roles = event.msg.member.get_roles();
-
         bool has_permission = false;
+
         for (const auto& role_id : member_roles) {
             if (roles.find(role_id) != roles.end() && roles[role_id].permissions.has(dpp::p_manage_roles)) {
                 has_permission = true;
                 break;
             }
         }
-
         if (!has_permission) {
             event.reply("⛔ Tu n'as pas la permission de muter des membres.");
             return;
         }
 
         dpp::snowflake mute_role_id = 0;
+
         for (const auto& [role_id, role] : roles) {
             if (role.name == "Muted") {
                 mute_role_id = role_id;
                 break;
             }
         }
-
         if (mute_role_id == 0) {
             event.reply("⛔ Le rôle 'Muted' n'existe pas. Veuillez le créer manuellement.");
             return;
         }
-
         event.from->creator->guild_member_add_role(event.msg.guild_id, user_id, mute_role_id, [event, user_id, mute_role_id, duration](const dpp::confirmation_callback_t& callback) {
             if (callback.is_error()) {
                 event.reply("❌ Impossible de muter l'utilisateur.");
                 return;
             }
-
             dpp::snowflake guild_id = event.msg.guild_id;
             event.reply("✅ L'utilisateur <@" + std::to_string(user_id) + "> a été muté pour " + std::to_string(duration) + " minutes.");
-
             std::thread([event, user_id, mute_role_id, guild_id, duration]() {
                 std::this_thread::sleep_for(std::chrono::minutes{duration});
                 event.from->creator->guild_member_remove_role(guild_id, user_id, mute_role_id);
             }).detach();
         });
     });
-}
-
 }
 
 void Commands::handle_message(const dpp::message_create_t& event)
